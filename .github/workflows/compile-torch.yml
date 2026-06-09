@@ -33,7 +33,7 @@ jobs:
         :: 极限体积优化开关
         set BUILD_CUSTOM_PROTOBUF=ON
         set BUILD_PYTHON=OFF
-        set BUILD_CAFFE2=OFF
+        set BUILD_CAFFE2=ON
         set USE_CUDA=OFF
         set USE_NUMPY=OFF
         set USE_OPENMP=OFF
