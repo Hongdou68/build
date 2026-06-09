@@ -1,0 +1,60 @@
+name: Build Super Light LibTorch (<30MB)
+
+on:
+  workflow_dispatch: # 网页端手动一键触发
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Tools
+      run: pip install pyyaml typing_extensions numpy
+
+    - name: Clone PyTorch
+      run: git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
+
+    - name: Compile Ultra Small DLL
+      shell: cmd
+      run: |
+        cd pytorch
+        
+        :: 注入仓库根目录下的精准算子表
+        set SELECTED_OP_LIST=${{ github.workspace }}/selected_operators.yaml
+        
+        :: 极限体积优化开关
+        set BUILD_CUSTOM_PROTOBUF=ON
+        set BUILD_PYTHON=OFF
+        set BUILD_CAFFE2=OFF
+        set USE_CUDA=OFF
+        set USE_NUMPY=OFF
+        set USE_OPENMP=OFF
+        
+        :: 彻底剔除分布式网络通信组件
+        set USE_DISTRIBUTED=OFF
+        set USE_TENSORPIPE=OFF
+        set USE_GLOO=OFF
+        
+        :: 抛弃几百MB的Intel MKL，强制使用Eigen轻量矩阵库
+        set USE_MKL=OFF
+        set BLAS=Eigen
+        
+        :: 强制编译模式为纯 Release
+        set CMAKE_BUILD_TYPE=Release
+        
+        :: 执行编译
+        call scripts\build_windows.bat
+
+    - name: Upload Custom LibTorch
+      uses: actions/upload-artifact@v4
+      with:
+        name: ultra-small-libtorch
+        path: pytorch/build/libtorch/
