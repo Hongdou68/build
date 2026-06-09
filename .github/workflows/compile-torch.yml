@@ -1,37 +1,47 @@
 name: Build Super Light LibTorch (<30MB)
 
 on:
-  workflow_dispatch: # 网页端手动一键触发
+  workflow_dispatch: # 允许在 GitHub 网页端手动一键点击触发
 
 jobs:
-  build:
-    runs-on: windows-2022
+  build-custom-libtorch:
+    runs-on: windows-2022 # 使用自带 Visual Studio 2022 的 Windows 虚拟机
 
     steps:
-    - name: Checkout Code
+    - name: Checkout Repository Code
       uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Set up Python Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Install Tools
+    - name: Install Python Tools
       run: pip install pyyaml typing_extensions numpy
 
-    - name: Clone PyTorch
-      run: git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
+    # 核心步骤：激活 Windows MSVC 命令行环境，防止 Ninja 报找不到 C++ 编译器错误
+    - name: Set up MSVC Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
 
-    - name: Run Custom Crop Build (Direct CMake)
+    - name: Clone PyTorch Source Code
+      run: |
+        # 克隆 v2.2.0 稳定版源码，--recursive 会完整拉取所有底层依赖子模块
+        git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
+
+    - name: Run Direct CMake Architecture Construction
       shell: cmd
       run: |
-        # 1. 创建并进入独立的编译目录
+        # 1. 创建并进入独立的编译目录（隔离源码）
         mkdir build_dir
         cd build_dir
         
-        # 2. 直接调用 CMake，强制注入所有极限瘦身参数（注意：Windows下换行用 ^）
+        # 2. 绕过官方黑盒子脚本，直接调用 CMake 强行注入极限瘦身参数
+        # 注意：Windows 命令行中换行符必须使用脱字符 ^
         cmake -G "Ninja" ^
           -DCMAKE_BUILD_TYPE=Release ^
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\libtorch_output" ^
           -DBUILD_SHARED_LIBS=ON ^
           -DBUILD_TEST=OFF ^
           -DBUILD_PYTHON=OFF ^
@@ -49,11 +59,12 @@ jobs:
           -DBUILD_CUSTOM_PROTOBUF=ON ^
           ../pytorch
 
-        # 3. 开始编译并执行安装
+        # 3. 启动多线程编译并提取打包文件到安装目录
         cmake --build . --target install --config Release
 
-    - name: Upload Custom LibTorch
+    - name: Upload Custom Tiny LibTorch
       uses: actions/upload-artifact@v4
       with:
-        name: ultra-small-libtorch
-        path: pytorch/build/libtorch/
+        name: ultra-small-libtorch-windows
+        # 将路径精准指向自定义的安装输出目录
+        path: ${{ github.workspace }}\libtorch_output\
