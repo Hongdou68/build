@@ -1,0 +1,22 @@
+# 显式指定训练所需的算子白名单
+- aten::conv2d
+- aten::convolution
+- aten::_convolution
+- aten::convolution_backward
+- aten::max_pool2d
+- aten::max_pool2d_with_indices
+- aten::max_pool2d_with_indices_backward
+- aten::addmm
+- aten::mm
+- aten::t
+- aten::leaky_relu
+- aten::leaky_relu_backward
+- aten::adam_step
+- aten::adamw_step   # 预留，防优化器变体报错
+- aten::add_
+- aten::mul_
+- aten::sub_
+- aten::div_
+- aten::zeros
+- aten::ones
+- aten::empty
