@@ -27,18 +27,17 @@ jobs:
 
     - name: Clone PyTorch Source Code
       run: |
-        # 克隆 v2.2.0 稳定版源码，--recursive 会完整拉取所有底层依赖子模块
+        # 注意：这里是标准的 YAML 环境，可以用 # 注释
         git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
 
     - name: Run Direct CMake Architecture Construction
       shell: cmd
       run: |
-        # 1. 创建并进入独立的编译目录（隔离源码）
+        :: 1. 创建并进入独立的编译目录（隔离源码）
         mkdir build_dir
         cd build_dir
         
-        # 2. 绕过官方黑盒子脚本，直接调用 CMake 强行注入极限瘦身参数
-        # 注意：Windows 命令行中换行符必须使用脱字符 ^
+        :: 2. 直接调用 CMake，强制注入所有极限瘦身参数（Windows 换行符必须使用脱字符 ^）
         cmake -G "Ninja" ^
           -DCMAKE_BUILD_TYPE=Release ^
           -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\libtorch_output" ^
@@ -59,7 +58,7 @@ jobs:
           -DBUILD_CUSTOM_PROTOBUF=ON ^
           ../pytorch
 
-        # 3. 启动多线程编译并提取打包文件到安装目录
+        :: 3. 启动多线程编译并提取打包文件到安装目录
         cmake --build . --target install --config Release
 
     - name: Upload Custom Tiny LibTorch
