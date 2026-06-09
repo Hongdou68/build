@@ -1,69 +1,92 @@
-name: Build Super Light LibTorch (<30MB)
+name: Build Minimal LibTorch (Windows CPU)
 
+# 手动触发: 在 GitHub 仓库 -> Actions -> 选择本工作流 -> Run workflow
 on:
-  workflow_dispatch: # 允许在 GitHub 网页端手动一键点击触发
+  workflow_dispatch:
+    inputs:
+      pytorch_ref:
+        description: "PyTorch 版本 tag (与本地保持一致建议 v2.4.1)"
+        required: true
+        default: "v2.4.1"
 
 jobs:
-  build-custom-libtorch:
-    runs-on: windows-2022 # 使用自带 Visual Studio 2022 的 Windows 虚拟机
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 360
+    env:
+      # ---- 只保留训练必需, 关掉所有用不到的后端, 缩小 torch_cpu.dll ----
+      USE_CUDA: "0"
+      USE_ROCM: "0"
+      USE_DISTRIBUTED: "0"    # 去掉 uv.dll / gloo / c10d
+      USE_FBGEMM: "0"         # 去掉 fbgemm.dll
+      USE_MKLDNN: "0"         # 去掉 dnnl
+      USE_NKL: "0"
+      USE_ONNPACK: "0"
+      USE_QNNPACK: "0"
+      USE_PYTORCH_QNNPACK: "0"
+      USE_KINETO: "0"         # 去掉 profiler
+      USE_TENSORPIPE: "0"
+      USE_OPENMP: "1"         # 小卷积保留 OpenMP, 足够用
+      BUILD_TEST: "0"
+      BUILD_PYTHON: "0"
+      BUILD_SHARED_LIBS: "1"
+      CMAKE_BUILD_TYPE: "Release"
+      MAX_JOBS: "4"
 
     steps:
-    - name: Checkout Repository Code
-      uses: actions/checkout@v4
+      - name: Checkout PyTorch source
+        uses: actions/checkout@v4
+        with:
+          repository: pytorch/pytorch
+          ref: ${{ github.event.inputs.pytorch_ref }}
+          submodules: recursive
+          path: pytorch
 
-    - name: Set up Python Environment
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-    - name: Install Python Tools
-      run: pip install pyyaml typing_extensions numpy
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-    # 核心步骤：激活 Windows MSVC 命令行环境，防止 Ninja 报找不到 C++ 编译器错误
-    - name: Set up MSVC Developer Command Prompt
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: x64
+      - name: Install build dependencies
+        working-directory: pytorch
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyyaml typing_extensions ninja
 
-    - name: Clone PyTorch Source Code
-      run: |
-        # 注意：这里是标准的 YAML 环境，可以用 # 注释
-        git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
+      - name: Build libtorch (minimal)
+        working-directory: pytorch
+        run: |
+          python tools/build_libtorch.py
 
-    - name: Run Direct CMake Architecture Construction
-      shell: cmd
-      run: |
-        :: 1. 创建并进入独立的编译目录（隔离源码）
-        mkdir build_dir
-        cd build_dir
-        
-        :: 2. 直接调用 CMake，强制注入所有极限瘦身参数（Windows 换行符必须使用脱字符 ^）
-        cmake -G "Ninja" ^
-          -DCMAKE_BUILD_TYPE=Release ^
-          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\libtorch_output" ^
-          -DBUILD_SHARED_LIBS=ON ^
-          -DBUILD_TEST=OFF ^
-          -DBUILD_PYTHON=OFF ^
-          -DBUILD_CAFFE2=ON ^
-          -DINTERN_BUILD_MOBILE=ON ^
-          -DSELECTED_OP_LIST="${{ github.workspace }}\selected_operators.yaml" ^
-          -DUSE_CUDA=OFF ^
-          -DUSE_NUMPY=OFF ^
-          -DUSE_OPENMP=OFF ^
-          -DUSE_DISTRIBUTED=OFF ^
-          -DUSE_TENSORPIPE=OFF ^
-          -DUSE_GLOO=OFF ^
-          -DUSE_MKL=OFF ^
-          -DBLAS=Eigen ^
-          -DBUILD_CUSTOM_PROTOBUF=ON ^
-          ../pytorch
+      - name: List produced DLLs and sizes
+        working-directory: pytorch
+        shell: pwsh
+        run: |
+          Get-ChildItem build/lib/*.dll | 
+            Select-Object Name, @{Name='MB';Expression={[math]::Round($_.Length/1MB,1)}} | 
+            Sort-Object MB -Descending | Format-Table -AutoSize
 
-        :: 3. 启动多线程编译并提取打包文件到安装目录
-        cmake --build . --target install --config Release
+      - name: Package libtorch (libs + headers)
+        working-directory: pytorch
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/libtorch/lib | Out-Null
+          New-Item -ItemType Directory -Force -Path dist/libtorch/include | Out-Null
+          Copy-Item build/lib/*.dll dist/libtorch/lib/ -Force
+          Copy-Item build/lib/*.lib dist/libtorch/lib/ -Force
+          # 头文件 torch C++ 前端 + ATen + c10
+          Copy-Item -Recurse torch/include/* dist/libtorch/include/ -Force
+          Compress-Archive -Path dist/libtorch/* -DestinationPath libtorch-min-win-cpu.zip -Force
 
-    - name: Upload Custom Tiny LibTorch
-      uses: actions/upload-artifact@v4
-      with:
-        name: ultra-small-libtorch-windows
-        # 将路径精准指向自定义的安装输出目录
-        path: ${{ github.workspace }}\libtorch_output\
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtorch-min-win-cpu
+          path: pytorch/libtorch-min-win-cpu.zip
+          retention-days: 14
