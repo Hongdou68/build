@@ -22,43 +22,35 @@ jobs:
     - name: Clone PyTorch
       run: git clone --depth 1 --branch v2.4.1 https://github.com/pytorch/pytorch.git --recursive
 
-    - name: Run Custom Crop Build
+    - name: Run Custom Crop Build (Direct CMake)
       shell: cmd
       run: |
-        cd pytorch
+        # 1. 创建并进入独立的编译目录
+        mkdir build_dir
+        cd build_dir
         
-        :: 1. 注入你的精准算子白名单
-        set SELECTED_OP_LIST=${{ github.workspace }}/selected_operators.yaml
-        
-        :: 2. 开启官方移动端/轻量化骨架模式（会自动帮你关闭测试和不必要的耦合）
-        set INTERN_BUILD_MOBILE=ON
-        
-        :: 3. 纠正库类型：强制定向为生成动态库 (.dll)，确保裁剪机制正常工作
-        set BUILD_SHARED_LIBS=ON
-        set BUILD_TEST=OFF
-        
-        :: 4. 极限体积优化开关
-        set BUILD_CUSTOM_PROTOBUF=ON
-        set BUILD_PYTHON=OFF
-        set BUILD_CAFFE2=ON
-        set USE_CUDA=OFF
-        set USE_NUMPY=OFF
-        set USE_OPENMP=OFF
-        
-        :: 5. 彻底剔除分布式网络通信组件
-        set USE_DISTRIBUTED=OFF
-        set USE_TENSORPIPE=OFF
-        set USE_GLOO=OFF
-        
-        :: 6. 抛弃 MKL，改用 Eigen 矩阵库
-        set USE_MKL=OFF
-        set BLAS=Eigen
-        
-        :: 7. 强制编译模式为纯 Release
-        set CMAKE_BUILD_TYPE=Release
-        
-        :: 执行官方 Windows 编译批处理
-        call scripts\build_windows.bat
+        # 2. 直接调用 CMake，强制注入所有极限瘦身参数（注意：Windows下换行用 ^）
+        cmake -G "Ninja" ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DBUILD_SHARED_LIBS=ON ^
+          -DBUILD_TEST=OFF ^
+          -DBUILD_PYTHON=OFF ^
+          -DBUILD_CAFFE2=ON ^
+          -DINTERN_BUILD_MOBILE=ON ^
+          -DSELECTED_OP_LIST="${{ github.workspace }}\selected_operators.yaml" ^
+          -DUSE_CUDA=OFF ^
+          -DUSE_NUMPY=OFF ^
+          -DUSE_OPENMP=OFF ^
+          -DUSE_DISTRIBUTED=OFF ^
+          -DUSE_TENSORPIPE=OFF ^
+          -DUSE_GLOO=OFF ^
+          -DUSE_MKL=OFF ^
+          -DBLAS=Eigen ^
+          -DBUILD_CUSTOM_PROTOBUF=ON ^
+          ../pytorch
+
+        # 3. 开始编译并执行安装
+        cmake --build . --target install --config Release
 
     - name: Upload Custom LibTorch
       uses: actions/upload-artifact@v4
