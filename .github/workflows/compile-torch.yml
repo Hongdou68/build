@@ -29,7 +29,7 @@ jobs:
       USE_OPENMP: "1"         # 小卷积保留 OpenMP, 足够用
       BUILD_TEST: "0"
       BUILD_PYTHON: "0"
-      BUILD_SHARED_LIBS: "1"
+      BUILD_SHARED_LIBS: "0"
       CMAKE_BUILD_TYPE: "Release"
       MAX_JOBS: "4"
 
